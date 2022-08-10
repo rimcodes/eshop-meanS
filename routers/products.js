@@ -1,10 +1,24 @@
 const { Product } = require('../models/product');
 const { Category } = require('../models/category');
+const { Store } = require('../models/store');
+
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const multer = require('multer');
-const { Store } = require('../models/store');
+const aws = require('aws-sdk');
+const multerS3 = require('multer-s3');
+
+/**
+ * S3 setup
+ */
+
+const s3 = new aws.S3({
+accessKeyId: process.env.BUCKETEER_AWS_ACCESS_KEY_ID,
+secretAccessKey: process.env.BUCKETEER_AWS_SECRET_ACCESS_KEY,
+region: process.env.BUCKETEER_AWS_REGION,
+
+});
 
 const FILE_TYPE_MAP = {
     'image/png': 'png',
@@ -13,27 +27,27 @@ const FILE_TYPE_MAP = {
     'image/webp': 'webp'
 }
 
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
+/**
+ * the specific implemenation for the ability to upload images
+ * using mutler and mongoose and in an express sever
+ * 
+ */
 
-    const isValid = FILE_TYPE_MAP[file.mimetype];
-    let uploadError = new Error('invalid image type');
-
-    if(isValid) {
-        uploadError = null;
-    };
-
-    cb(uploadError, 'public/uploads')
-  },
-  filename: function (req, file, cb) {
-
-    const fileName = file.originalname.split(' ').join('-');
-    const extention = FILE_TYPE_MAP[file.mimetype];
-    cb(null, `${fileName}-${Date.now()}.${extention}`)
-  }
-})
-
-const uploadOptions = multer({ storage: storage })
+const uploadS3 = multer({ 
+    storage: multerS3({
+        s3: s3,
+        bucket: 'samsar',//process.env.BUCKETEER_BUCKET_NAME,
+        metadata: function (req, file, cb) {
+        cb(null, {fieldName:  file.fieldname});
+        },
+        key: function (req, file, cb) {
+        const fileName = file.originalname.split(' ').join('-');
+        const extention = FILE_TYPE_MAP[file.mimetype];
+        cb(null, `public/samsar/${fileName}-${Date.now()}.${extention}`)
+        },
+        acl: 'public-read'
+    }),
+});
 
 // get the products with the option to limiting the catagories
 router.get(`/`, async (req, res) => {
@@ -78,7 +92,7 @@ router.get(`/name/:name`, async (req, res) => {
 } );
 
 // posting products to the database 
-router.post(`/`, uploadOptions.single('image'), async (req, res) => {
+router.post(`/`, uploadS3.single('image'), async (req, res) => {
 
     // Making sure the category exists
     const category = await Category.findById(req.body.category);
@@ -119,7 +133,7 @@ router.post(`/`, uploadOptions.single('image'), async (req, res) => {
 } );
 
 // updating a specific product
-router.put('/:id', uploadOptions.single('image'), async (req, res) => {
+router.put('/:id', uploadS3.single('image'), async (req, res) => {
     if(!mongoose.isValidObjectId(req.params.id)){
         res.status(400).send('Invalid product id');
     }
@@ -138,14 +152,18 @@ router.put('/:id', uploadOptions.single('image'), async (req, res) => {
     }
 
     const product = await Product.findById(req.params.id);
+    console.log(product);
+
     if(!product) return res.status(400).send('Invalid product ');
 
     const file = req.file;
     let imagePath;
 
+    let fileName = 'rimmart.png';
+    let basePath = process.env.BASE_PATH;
     if(file) {
-        const fileName = file.filename;
-        const basePath = `https://rimcode-rimmart-backend.herokuapp.com/public/uploads/`;
+        fileName = req.file.key;
+        basePath = process.env.BUCKETEER_BUCKET_NAME || ``;
         imagePath = `${basePath}${fileName}`;
     } else {
         imagePath = product.image;
@@ -216,7 +234,7 @@ router.get('/get/featured/:count', async (req, res) => {
 
 router.put(
     '/gallery-image/:id', 
-    uploadOptions.array('images', 10),
+    uploadS3.array('images', 10),
     async (req, res) => {
         if(!mongoose.isValidObjectId(req.params.id)){
             res.status(400).send('Invalid product id');
@@ -224,10 +242,10 @@ router.put(
 
         const files = req.files;
         let imagesPaths = [];
-        const basePath = `https://rimcode-rimmart-backend.herokuapp.com/public/uploads/`;
+        const basePath = process.env.BUCKETEER_BUCKET_NAME || ``;
         if(files) {
             files.map(file => {
-                imagesPaths.push(`${basePath}${file.filename}`)
+                imagesPaths.push(`${basePath}${file.key}`)
             })
         }
 

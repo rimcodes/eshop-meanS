@@ -18,7 +18,7 @@ router.get('/:id', async (req, res) => {
     const user = await User.findById(req.params.id).select('-passwordHash');
 
     if(!user) {
-        res.status(500).json({ message: 'The category with the given ID was not  found.'})
+        res.status(500).json({ message: 'The User with the given ID was not  found.'})
     }
     res.status(200).send(user);
 });
@@ -41,7 +41,7 @@ router.post(`/`, async (req, res) => {
     user = await user.save();
 
     if(!user)
-    return res.status(500).send('The product cannot be created');
+    return res.status(500).send('The user cannot be created');
 
     res.send(user);
 } );
@@ -62,7 +62,6 @@ router.put('/:id', async (req, res) => {
             email: req.body.email,
             passwordHash: newPassword,
             phone: req.body.phone,
-            isAdmin: req.body.isAdmin,
             street: req.body.street,
             apartement: req.body.apartement,
             zip: req.body.zip,
@@ -83,9 +82,9 @@ router.post('/login', async (req, res) => {
     const user = await User.findOne({ email: req.body.email });
 
     let secret = process.env.secret;
-
     if(!user) {
         res.status(400).send('The user was not found!');
+        return;
     }
 
     if (user && bcrypt.compareSync( req.body.password, user.passwordHash)) {
@@ -102,7 +101,7 @@ router.post('/login', async (req, res) => {
             token: token
         });
     } else {
-        res.status(500).send(' Pass was wrong!');
+        res.status(401).send(' Pass was wrong!');
     }
 });
 
@@ -113,7 +112,6 @@ router.post(`/register`, async (req, res) => {
         email: req.body.email,
         passwordHash: bcrypt.hashSync(req.body.password, 10),
         phone: req.body.phone,
-        isAdmin: req.body.isAdmin,
         street: req.body.street,
         apartement: req.body.apartement,
         zip: req.body.zip,
